@@ -9,9 +9,10 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "dev": "cdk deploy & cdk watch"
+    "dev": "cdk deploy && cdk watch"
   },
   "devDependencies": {
+    "@types/aws-lambda": "^8.10.149",
     "@types/jest": "^29.5.14",
     "@types/node": "22.7.9",
     "aws-cdk": "2.1015.0",
@@ -21,6 +22,8 @@
     "typescript": "~5.6.3"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.810.0",
+    "@aws-sdk/client-polly": "^3.810.0",
     "@aws-sdk/client-s3": "^3.810.0",
     "aws-cdk-lib": "2.195.0",
     "constructs": "^10.0.0"
