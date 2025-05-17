@@ -84,10 +84,19 @@ export const handler = async (event: any) => {
 
 
 
-        // temp file paths
-        const speechFilePath = path.join(os.tmpdir(), randomUUID(), 'speech.mp3');
-        const musicFilePath = path.join(os.tmpdir(), randomUUID(), 'background.mp3');
-        const outputFilePath = path.join(os.tmpdir(), randomUUID(), 'final-meditation.mp3');
+        // Create temp file paths with proper directory creation
+        const speechDir = path.join(os.tmpdir(), randomUUID());
+        const musicDir = path.join(os.tmpdir(), randomUUID());
+        const outputDir = path.join(os.tmpdir(), randomUUID());
+
+        // Create directories if they don't exist
+        fs.mkdirSync(speechDir, { recursive: true });
+        fs.mkdirSync(musicDir, { recursive: true });
+        fs.mkdirSync(outputDir, { recursive: true });
+
+        const speechFilePath = path.join(speechDir, 'speech.mp3');
+        const musicFilePath = path.join(musicDir, 'background.mp3');
+        const outputFilePath = path.join(outputDir, 'final-meditation.mp3');
         // // Write files to temp directory
         fs.writeFileSync(speechFilePath, await streamToBuffer(speechData.Body));
         fs.writeFileSync(musicFilePath, await streamToBuffer(musicData.Body));

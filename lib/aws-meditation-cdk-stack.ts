@@ -75,19 +75,17 @@ export class AwsMeditationCdkStack extends cdk.Stack {
     });
     textToSpeechLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
       actions: ['polly:SynthesizeSpeech'],
-      // Replace with specific Polly voice ARNs if needed, otherwise use all voices in the account/region
-      resources: ['arn:aws:polly:*:*:voice/*'],
+      resources: ['*'], // required for Polly
     }));
 
     textToSpeechLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
-      actions: ['s3:PutObject', 's3:GetObject'],
-      resources: [`${userMeditationSessionsBucket.bucketArn}/*`],
+      actions: ['s3:PutObject', 's3:GetObject', 's3:ListBucket'],
+      resources: [
+        userMeditationSessionsBucket.bucketArn,
+        `${userMeditationSessionsBucket.bucketArn}/*`
+      ],
     }));
 
-    textToSpeechLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
-      actions: ['s3:ListBucket'],
-      resources: [userMeditationSessionsBucket.bucketArn],
-    }));
 
     // layer for ffmpeg
     const ffmpegLayer = new cdk.aws_lambda.LayerVersion(this, `${STAGE}-FFmpegLayer`, {
