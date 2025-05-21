@@ -1,0 +1,50 @@
+type MeditationSession {
+  sessionID: ID!
+  userID: ID!
+  timestamp: String!
+}
+
+enum MeditationStatus {
+  REQUESTED
+  SCRIPT_GENERATED
+  AUDIO_GENERATED
+  COMPLETED
+  FAILED
+}
+
+type User {
+  id: ID!
+  email: String!
+  firstName: String
+  lastName: String
+}
+
+type Auth {
+  token: String!
+}
+
+# Pagination for meditation sessions
+type MeditationSessionConnection {
+  items: [MeditationSession]
+  nextToken: String
+}
+
+type Query {
+  getMeditationSession(sessionID: ID!): MeditationSession
+  listMeditationSessions: [MeditationSession]
+  # Protected query that requires authentication
+  getMyMeditationSessions(limit: Int, nextToken: String): MeditationSessionConnection
+  getUser: User
+}
+
+type Mutation {
+  createMeditationSession(
+    userID: ID!
+  ): MeditationSession
+  
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+}

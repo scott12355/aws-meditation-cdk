@@ -1,6 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { randomUUID } from 'crypto';
 
 // Initialize the S3 client
 const s3Client = new S3Client({});
@@ -13,12 +12,12 @@ export const handler = async (event: any) => {
     try {
         console.log('Starting meditation script generation...');
 
-        const { userID } = event;
-        if (!userID) {
+        const { userID, sessionID } = event;
+        if (!userID || !sessionID) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({
-                    message: 'userID is required',
+                    message: 'userID & sessionID are required',
                 }),
             };
         }
@@ -29,25 +28,21 @@ export const handler = async (event: any) => {
         const currentDate = date.toISOString().split('T')[0];
         const systemPrompt = `Generate a meditation script that will then be put through a text to speech process. Use SSML that will work with AWS Polly. No need for any titles or section headers. Only output the script in a valid SSML format. Be use to only use SSML tags supported by AWS Polly.`;
         // Generate a unique ID for this meditation script
-        const scriptId = randomUUID();
         const modelInput = {
-            "modelId": "anthropic.claude-3-5-sonnet-20240620-v1:0",
-            "contentType": "application/json",
-            "accept": "application/json",
-            "body": JSON.stringify({
-                "anthropic_version": "bedrock-2023-05-31",
-                "messages": [
+            modelId: "amazon.nova-pro-v1:0",
+            contentType: "application/json",
+            accept: "application/json",
+            body: JSON.stringify({
+                messages: [
                     {
-                        "role": "user",
-                        "content": [
+                        role: "user",
+                        content: [
                             {
-                                "type": "text",
-                                "text": systemPrompt
+                                text: systemPrompt // just "text", no "type"
                             }
                         ]
                     }
-                ],
-                "max_tokens": 1000
+                ]
             })
         };
 
@@ -69,10 +64,10 @@ export const handler = async (event: any) => {
                 const responseJson = JSON.parse(new TextDecoder().decode(response.body));
                 console.log('Response body parsed:', JSON.stringify(responseJson, null, 2));
 
-                // Fix response parsing for Claude 3.5 Sonnet structure
-                const { text } = responseJson.content[0];
-                GeneratedScript = cleanScript(text);
+                // Fix for Amazon Nova Pro response structure
+                const text = responseJson.output.message.content[0].text;
 
+                GeneratedScript = cleanScript(text);
                 console.log('Bedrock model response text:', text);
             } catch (parseError) {
                 console.error('Error parsing Bedrock response:', parseError);
@@ -86,6 +81,8 @@ export const handler = async (event: any) => {
                 body: JSON.stringify({
                     message: 'Error invoking Bedrock model',
                     error: error instanceof Error ? error.message : 'An unknown error occurred',
+                    userID,
+                    sessionID,
                 }),
             };
         }
@@ -98,9 +95,9 @@ export const handler = async (event: any) => {
 
         await s3Client.send(new PutObjectCommand({
             Bucket: bucketName,
-            Key: `${userID}/${currentDate}/${scriptId}.json`,
+            Key: `${userID}/${currentDate}/${sessionID}.json`,
             Body: JSON.stringify({
-                id: scriptId,
+                id: sessionID,
                 timestamp: Date.now(),
                 script: GeneratedScript,
             }),
@@ -112,7 +109,7 @@ export const handler = async (event: any) => {
             statusCode: 200,
             body: JSON.stringify({
                 message: 'Meditation script generated successfully',
-                scriptId: scriptId,
+                sessionID: sessionID,
                 script: GeneratedScript,
                 userID: userID,
             }),
@@ -124,6 +121,8 @@ export const handler = async (event: any) => {
             body: JSON.stringify({
                 message: 'Error generating meditation script',
                 error: error instanceof Error ? error.message : 'An unknown error occurred',
+                userID: event.userID,
+                sessionID: event.sessionID,
             }),
         };
     }

@@ -1,0 +1,18 @@
+{
+    "name": "join-speech-and-music",
+    "version": "1.0.0",
+    "description": "Lambda function to join speech audio with background music for meditations",
+    "main": "index.js",
+    "scripts": {
+        "build": "tsc",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "dependencies": {
+        "aws-sdk": "^2.1100.0"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.100",
+        "@types/node": "^16.0.0",
+        "typescript": "^4.5.0"
+    }
+}

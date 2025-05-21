@@ -1,18 +1,21 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 
-const s3Client = new S3Client({});
 
+const s3Client = new S3Client({});
+const dynamoClient = new DynamoDBClient({});
 export const handler = async (event: any) => {
     try {
         console.log('Event received:', JSON.stringify(event, null, 2));
         const body = event.body ? JSON.parse(event.body) : {};
-        const { scriptId, userID, speechAudioPath } = body;
-        console.log('scriptId:', scriptId);
+        const { sessionID, userID, speechAudioPath } = body;
+        console.log('sessionID:', sessionID);
         console.log('userID:', userID);
         if (!userID) {
             return {
@@ -22,11 +25,11 @@ export const handler = async (event: any) => {
                 }),
             };
         }
-        if (!scriptId) {
+        if (!sessionID) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({
-                    message: 'scriptId is required',
+                    message: 'sessionID is required',
                 }),
             };
         }
@@ -35,16 +38,12 @@ export const handler = async (event: any) => {
                 statusCode: 400,
                 body: JSON.stringify({
                     message: 'speechAudioPath is required',
+                    userID: event.userID,
+                    sessionID: event.sessionID,
                 }),
             };
         }
 
-
-        // // Create temp directory for processing
-        // const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meditation-'));
-        // const speechFilePath = path.join(tempDir, 'speech.mp3');
-        // const musicFilePath = path.join(tempDir, 'background.mp3');
-        // const outputFilePath = path.join(tempDir, 'final-meditation.mp3');
 
         // Get the speech file from S3
         const MediationBucket = process.env.USER_SESSION_BUCKET_NAME;
@@ -66,7 +65,15 @@ export const handler = async (event: any) => {
         }
         catch (error) {
             console.error('Error downloading speech audio:', error);
-            throw new Error('Error downloading speech audio');
+            return {
+                statusCode: 500,
+                body: JSON.stringify({
+                    message: 'Error downloading music audio',
+                    error: error instanceof Error ? error.message : 'An unknown error occurred',
+                    userID: event.userID,
+                    sessionID: event.sessionID,
+                }),
+            };
         }
 
         // Music file
@@ -79,7 +86,15 @@ export const handler = async (event: any) => {
         }
         catch (error) {
             console.error('Error downloading music audio:', error);
-            throw new Error('Error downloading music audio');
+            return {
+                statusCode: 500,
+                body: JSON.stringify({
+                    message: 'Error downloading music audio',
+                    error: error instanceof Error ? error.message : 'An unknown error occurred',
+                    userID: event.userID,
+                    sessionID: event.sessionID,
+                }),
+            };
         }
 
 
@@ -111,13 +126,60 @@ export const handler = async (event: any) => {
         // current date from unix timestamp
         const currentDate = new Date().toISOString().split('T')[0];
 
-        const finalAudioKey = `${userID}/${currentDate}/${scriptId}.mp3`;
+        const finalAudioKey = `${userID}/${currentDate}/${sessionID}.mp3`;
         await s3Client.send(new PutObjectCommand({
             Bucket: MediationBucket,
             Key: finalAudioKey,
             Body: fs.readFileSync(outputFilePath),
             ContentType: 'audio/mpeg',
         }));
+
+        // update the session in DynamoDB
+        const tableName = process.env.MEDITATION_TABLE_NAME;
+
+        const params = {
+            TableName: tableName,
+            Key: {
+                sessionID: { S: sessionID },
+            },
+            UpdateExpression: 'set #status = :status, #audioPath = :audioPath',
+            ExpressionAttributeNames: {
+                '#status': 'status',
+                '#audioPath': 'audioPath',
+            },
+            ExpressionAttributeValues: {
+                ':status': { S: 'COMPLETED' },
+                ':audioPath': { S: finalAudioKey },
+            },
+        };
+        try {
+            await dynamoClient.send(new UpdateItemCommand(params));
+        }
+        catch (error) {
+            console.error('Error updating DynamoDB:', error);
+            return {
+                statusCode: 500,
+                body: JSON.stringify({
+                    message: 'Error updating DynamoDB',
+                    error: error instanceof Error ? error.message : 'An unknown error occurred',
+                    userID: event.userID,
+                    sessionID: event.sessionID,
+                }),
+            };
+        }
+
+        console.log(`Updated meditation session in DynamoDB: ${sessionID}`);
+
+
+        // Clean up temp files/directories to avoid wasted Lambda time/disk
+        try {
+            fs.rmSync(speechDir, { recursive: true, force: true });
+            fs.rmSync(musicDir, { recursive: true, force: true });
+            fs.rmSync(outputDir, { recursive: true, force: true });
+        } catch (cleanupErr) {
+            console.warn('Error cleaning up temp files:', cleanupErr);
+        }
+
 
 
         return {
@@ -134,6 +196,8 @@ export const handler = async (event: any) => {
             body: JSON.stringify({
                 message: 'Error joining speech and music',
                 error: error instanceof Error ? error.message : 'An unknown error occurred',
+                userID: event.userID,
+                sessionID: event.sessionID,
             }),
         };
     }

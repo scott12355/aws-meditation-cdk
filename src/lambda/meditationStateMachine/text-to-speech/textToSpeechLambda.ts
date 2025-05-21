@@ -26,7 +26,7 @@ export const handler = async (event: any) => {
 
         // Parse the request body if it exists
         const body = event.body ? JSON.parse(event.body) : {};
-        const { scriptId, script, userID } = body;
+        const { sessionID, script, userID } = body;
         if (!userID) {
             return {
                 statusCode: 400,
@@ -37,7 +37,7 @@ export const handler = async (event: any) => {
         }
 
 
-        if (!scriptId) {
+        if (!sessionID) {
             return {
                 statusCode: 400,
                 headers: {
@@ -45,7 +45,7 @@ export const handler = async (event: any) => {
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Credentials': true
                 },
-                body: JSON.stringify({ message: 'scriptId is required' })
+                body: JSON.stringify({ message: 'sessionID is required' })
             };
         }
         // date from unix timestamp
@@ -96,7 +96,7 @@ export const handler = async (event: any) => {
             const audioBuffer = await streamToBuffer(pollyResponse.AudioStream as Readable);
 
             // Save the audio buffer to S3
-            const speechAudioPath = `${userID}/${currentDate}/${scriptId}.mp3`;
+            const speechAudioPath = `${userID}/${currentDate}/${sessionID}.mp3`;
             const putObjectCommand = new PutObjectCommand({
                 Bucket: process.env.CREATION_BUCKET_NAME,
                 Key: speechAudioPath,
@@ -118,7 +118,7 @@ export const handler = async (event: any) => {
                 },
                 body: JSON.stringify({
                     message: 'Text-to-speech conversion successful',
-                    scriptId,
+                    sessionID,
                     speechAudioPath: speechAudioPath,
                     userID,
                 })
