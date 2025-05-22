@@ -36,6 +36,12 @@ export class AwsMeditationCdkStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    meditationTable.addGlobalSecondaryIndex({
+      indexName: 'userID-index',
+      partitionKey: { name: 'userID', type: cdk.aws_dynamodb.AttributeType.STRING },
+      projectionType: cdk.aws_dynamodb.ProjectionType.ALL, // Or choose KEYS_ONLY or INCLUDE
+    });
+
     // lambda - generate script
     const generateScriptLambda = new lambda_nodejs.NodejsFunction(this, `${STAGE}-GenerateScriptLambda`, {
       runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,

@@ -37,39 +37,12 @@ export class MeditationGraphqlApi extends Construct {
             xrayEnabled: true,
         });
 
-        // Create DynamoDB data source
-        const meditationTableDS = this.api.addDynamoDbDataSource(
-            `${stage}-MeditationTableDS`,
-            meditationTable
-        );
-
-        // Query: Get meditation session
-        meditationTableDS.createResolver(
-            `${stage}-GetMeditationSessionResolver`,
-            {
-                typeName: 'Query',
-                fieldName: 'getMeditationSession',
-                requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('sessionID', 'sessionID'),
-                responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
-            });
-
-
-        meditationTableDS.createResolver(
-            `${stage}-ListMeditationSessionsResolver`,
-            {
-                typeName: 'Query',
-                fieldName: 'listMeditationSessions',
-                requestMappingTemplate: appsync.MappingTemplate.dynamoDbScanTable(),
-                responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultList(),
-            }
-        );
-
         // Create Lambda data source for creating meditations
         const createMeditationLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-CreateMeditationLambda`, {
             runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
             entry: join(__dirname, '..', 'src', 'lambda', 'create-meditation', 'index.ts'),
             handler: 'handler',
-            timeout: cdk.Duration.minutes(1),
+            timeout: cdk.Duration.seconds(10),
             environment: {
                 MEDITATION_TABLE: meditationTable.tableName,
                 STATE_MACHINE_ARN: stateMachine.stateMachineArn,
@@ -99,34 +72,45 @@ export class MeditationGraphqlApi extends Construct {
         );
 
 
+        // Create Lambda data source for listing a user's meditation sessions
+        const listUserMeditationSessionsLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-ListUserMeditationSessionsLambda`, {
+            runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+            entry: join(__dirname, '..', 'src', 'lambda', 'list-user-meditation-sessions', 'index.ts'),
+            description: 'List user meditation sessions',
+            handler: 'handler',
+            timeout: cdk.Duration.seconds(10),
+            environment: {
+                MEDITATION_TABLE: meditationTable.tableName,
+            },
+            bundling: {
+                externalModules: ['aws-sdk'],
+            },
+        });
 
+        // Grant read data permissions to the Lambda function
+        meditationTable.grantReadData(listUserMeditationSessionsLambda);
 
-        // Create a resolver for getting user's meditation sessions
-        meditationTableDS.createResolver(
-            `${stage}-GetMyMeditationSessionsResolver`,
+        // Explicitly allow query on the index
+        listUserMeditationSessionsLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+            actions: ['dynamodb:Query'],
+            resources: [
+                `${meditationTable.tableArn}/index/userID-index` // Index ARN
+            ],
+            effect: cdk.aws_iam.Effect.ALLOW, // Explicitly allow the action
+        }));
+
+        // Add Lambda data source to API for listing a user's sessions
+        const listUserMeditationSessionsDS = this.api.addLambdaDataSource(
+            `${stage}-ListUserMeditationSessionsLambdaDS`,
+            listUserMeditationSessionsLambda
+        );
+
+        // Query: List a user's meditation sessions
+        listUserMeditationSessionsDS.createResolver(
+            `${stage}-ListUserMeditationSessionsResolver`,
             {
                 typeName: 'Query',
-                fieldName: 'getMyMeditationSessions',
-                requestMappingTemplate: appsync.MappingTemplate.fromString(`
-                    {
-                        "version": "2017-02-28",
-                        "operation": "Scan",
-                        "filter": {
-                            "expression": "UserID = :UserID",
-                            "expressionValues": {
-                                ":UserID": $util.dynamodb.toDynamoDBJson($ctx.identity.sub)
-                            }
-                        },
-                        "limit": $util.defaultIfNull($ctx.args.limit, 20),
-                        "nextToken": $util.toJson($util.defaultIfNull($ctx.args.nextToken, null))
-                    }
-                `),
-                responseMappingTemplate: appsync.MappingTemplate.fromString(`
-                    {
-                        "items": $util.toJson($ctx.result.items),
-                        "nextToken": $util.toJson($ctx.result.nextToken)
-                    }
-                `),
+                fieldName: 'listUserMeditationSessions',
             }
         );
 
@@ -134,5 +118,12 @@ export class MeditationGraphqlApi extends Construct {
         new cdk.CfnOutput(this, 'GraphQLAPIURL', {
             value: this.api.graphqlUrl
         });
+
+        // Output the API key for reference
+        if (this.api.apiKey) {
+            new cdk.CfnOutput(this, 'GraphQLAPIKey', {
+                value: this.api.apiKey
+            });
+        }
     }
 }

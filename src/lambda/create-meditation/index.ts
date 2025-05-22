@@ -11,13 +11,20 @@ export const handler = async (event: any) => {
     console.log('Event received:', JSON.stringify(event, null, 2));
 
     try {
-        // Extract authentication info
-        if (!event.identity || !event.identity.claims || !event.identity.claims.sub) {
-            throw new Error('User is not authenticated');
+        // Get the user ID - either from Cognito claims or from arguments
+        let userID;
+        
+        // If using API Key auth or passing userID explicitly
+        if (event.arguments && event.arguments.userID) {
+            userID = event.arguments.userID;
+        } 
+        // If using Cognito auth
+        else if (event.identity && event.identity.claims && event.identity.claims.sub) {
+            userID = event.identity.claims.sub;
+        } else {
+            throw new Error('User is not authenticated or userID not provided');
         }
 
-        // Get the user ID from Cognito claims
-        const userID = event.identity.claims.sub;
         const sessionID = uuidv4();
         const timestamp = Date.now();
 
