@@ -143,8 +143,6 @@ export class AwsMeditationCdkStack extends cdk.Stack {
       resources: [meditationTable.tableArn],
     }));
 
-    // meditationTable.grantWriteData(creationFailedLambda);
-
 
 
 
@@ -168,7 +166,8 @@ export class AwsMeditationCdkStack extends cdk.Stack {
       stage: STAGE,
       meditationTable,
       stateMachine: meditationWorkflow.stateMachine,
-      userPool: cognitoAuth.userPool
+      userPool: cognitoAuth.userPool,
+      meditationBucket: userMeditationSessionsBucket,
     });
   }
 }

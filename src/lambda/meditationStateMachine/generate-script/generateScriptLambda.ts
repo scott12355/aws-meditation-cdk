@@ -26,7 +26,14 @@ export const handler = async (event: any) => {
         // date from unix timestamp
         const date = new Date();
         const currentDate = date.toISOString().split('T')[0];
-        const systemPrompt = `Generate a meditation script that will then be put through a text to speech process. Use SSML that will work with AWS Polly. No need for any titles or section headers. Only output the script in a valid SSML format. Be use to only use SSML tags supported by AWS Polly.`;
+        const systemPrompt = `Generate a meditation script using valid SSML for AWS Polly.
+Use only tags that are supported by AWS Polly: <speak>, <prosody>, and <break>.
+Do not use unsupported tags like <p>, <s>, <audio>, <voice>, or any custom or non-standard tags.
+Structure the script with calm pacing, using <break> tags where natural pauses would occur.
+Wrap the entire script in a <speak> tag.
+Use <prosody> to gently slow down the rate. Do not use <prosody> to change the pitch or volume.
+Start with a 5 second pause.
+Output only the SSML code — no explanations or titles.`;
         // Generate a unique ID for this meditation script
         const modelInput = {
             modelId: "amazon.nova-pro-v1:0",
@@ -131,11 +138,21 @@ export const handler = async (event: any) => {
 const cleanScript = (input: string): string => {
     let cleanedText = input;
 
-    // Remove all markdown code block syntax (```xml, ```ssml, or ```) anywhere in the string, including extra whitespace
+    // Remove all markdown code block syntax (```xml, ```ssml, or ```) anywhere in the string
     cleanedText = cleanedText.replace(/```(?:xml|ssml)?\s*|```/gi, '');
 
-    // Replace newlines with spaces and normalize whitespace
-    cleanedText = cleanedText.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    // Preserve line breaks within SSML tags but ensure proper spacing
+    cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
+
+    // Make sure the script is wrapped in <speak> tags
+    if (!cleanedText.includes('<speak>')) {
+        cleanedText = `<speak>${cleanedText}</speak>`;
+    }
+
+    // Ensure proper spacing around SSML tags
+    cleanedText = cleanedText.replace(/>\s+</g, '><');
+    cleanedText = cleanedText.replace(/>\s+/g, '> ');
+    cleanedText = cleanedText.replace(/\s+</g, ' <');
 
     return cleanedText;
 }

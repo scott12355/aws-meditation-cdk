@@ -223,7 +223,7 @@ async function mixAudio(speechPath: string, musicPath: string, outputPath: strin
         const ffmpeg = spawn('ffmpeg', [
             '-i', speechPath,
             '-i', musicPath,
-            '-filter_complex', '[1:a]volume=0.2[music];[0:a][music]amix=inputs=2:duration=longest',
+            '-filter_complex', '[1:a]volume=0.7[music];[0:a][music]amix=inputs=2:duration=longest',
             '-c:a', 'libmp3lame',
             '-q:a', '4',
             outputPath

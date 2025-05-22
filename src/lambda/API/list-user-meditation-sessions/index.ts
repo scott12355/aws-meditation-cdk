@@ -26,7 +26,7 @@ export const handler = async (event: any) => {
     try {
         const data = await client.send(new QueryCommand(params));
         const sessions = data.Items ? data.Items.map(item => unmarshall(item)) : [];
-        console.log('Sessions found:', sessions);
+        // console.log('Sessions found:', sessions);
         return sessions; // Directly return the array
     } catch (err: any) {
         console.error('Error querying DynamoDB:', err);

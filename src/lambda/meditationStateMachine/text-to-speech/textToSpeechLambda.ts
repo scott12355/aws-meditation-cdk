@@ -26,7 +26,7 @@ export const handler = async (event: any) => {
 
         // Parse the request body if it exists
         const body = event.body ? JSON.parse(event.body) : {};
-        const { sessionID, script, userID } = body;
+        let { sessionID, script, userID } = body;
         if (!userID) {
             return {
                 statusCode: 400,
@@ -65,6 +65,14 @@ export const handler = async (event: any) => {
                 body: JSON.stringify({ message: 'Script content is empty' })
             };
         }
+
+        // normalize script removing \" 
+        script = script.replace(/\"/g, '"');
+        script = script.replace(/\"/g, '"');
+        // replace ' with &apos;
+        script = script.replace(/'/g, '&apos;');
+        console.log('Normalized script:', script);
+
 
         // Limit script size if needed (Polly has limits)
         const maxChars = 3000; // Polly can handle around 3000 characters per request

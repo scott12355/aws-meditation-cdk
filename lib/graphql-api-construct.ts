@@ -11,6 +11,7 @@ export interface GraphqlApiProps {
     meditationTable: cdk.aws_dynamodb.Table;
     stateMachine: sfn.StateMachine;
     userPool: cognito.UserPool;
+    meditationBucket: cdk.aws_s3.Bucket;
 }
 
 export class MeditationGraphqlApi extends Construct {
@@ -19,7 +20,7 @@ export class MeditationGraphqlApi extends Construct {
     constructor(scope: Construct, id: string, props: GraphqlApiProps) {
         super(scope, id);
 
-        const { stage, meditationTable, stateMachine, userPool } = props;
+        const { stage, meditationTable, meditationBucket, stateMachine, userPool } = props;
 
         // Create the AppSync API
         this.api = new appsync.GraphqlApi(this, `${stage}-MeditationAPI`, {
@@ -40,7 +41,7 @@ export class MeditationGraphqlApi extends Construct {
         // Create Lambda data source for creating meditations
         const createMeditationLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-CreateMeditationLambda`, {
             runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
-            entry: join(__dirname, '..', 'src', 'lambda', 'create-meditation', 'index.ts'),
+            entry: join(__dirname, '..', 'src', 'lambda', 'API', 'create-meditation', 'index.ts'),
             handler: 'handler',
             timeout: cdk.Duration.seconds(10),
             environment: {
@@ -75,7 +76,7 @@ export class MeditationGraphqlApi extends Construct {
         // Create Lambda data source for listing a user's meditation sessions
         const listUserMeditationSessionsLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-ListUserMeditationSessionsLambda`, {
             runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
-            entry: join(__dirname, '..', 'src', 'lambda', 'list-user-meditation-sessions', 'index.ts'),
+            entry: join(__dirname, '..', 'src', 'lambda', 'API', 'list-user-meditation-sessions', 'index.ts'),
             description: 'List user meditation sessions',
             handler: 'handler',
             timeout: cdk.Duration.seconds(10),
@@ -113,6 +114,59 @@ export class MeditationGraphqlApi extends Construct {
                 fieldName: 'listUserMeditationSessions',
             }
         );
+
+        // Query: Get a meditation session presigned URL to audio file
+        const getMeditationSessionPresignedUrlLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-GetMeditationSessionPresignedUrlLambda`, {
+            runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+            functionName: `${stage}-GetMeditationSessionPresignedUrlLambda`,
+            entry: join(__dirname, '..', 'src', 'lambda', 'API', 'get-meditation-session-presigned-url', 'index.ts'),
+            description: 'Get presigned URL for meditation session audio',
+            handler: 'handler',
+            timeout: cdk.Duration.seconds(10),
+            environment: {
+                MEDITATION_BUCKET: meditationBucket.bucketName,
+                MEDITATION_TABLE_NAME: meditationTable.tableName,
+            },
+            bundling: {
+                externalModules: ['aws-sdk'],
+            },
+        });
+
+        // Grant read data permissions to the Lambda function
+        meditationTable.grantReadData(getMeditationSessionPresignedUrlLambda);
+
+        // Fix the S3 permissions - this is the key change needed
+        getMeditationSessionPresignedUrlLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+            actions: ['s3:GetObject'],
+            resources: [
+                `${meditationBucket.bucketArn}/*` // Grant access to all objects in the bucket
+            ],
+            effect: cdk.aws_iam.Effect.ALLOW,
+        }));
+
+        getMeditationSessionPresignedUrlLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+            actions: ['dynamodb:GetItem', 'dynamodb:Scan'],
+            resources: [
+                meditationTable.tableArn
+            ],
+            effect: cdk.aws_iam.Effect.ALLOW,
+        }));
+
+
+        // Add Lambda data source to API for getting presigned URL
+        const getMeditationSessionPresignedUrlDS = this.api.addLambdaDataSource(
+            `${stage}-GetMeditationSessionPresignedUrlLambdaDS`,
+            getMeditationSessionPresignedUrlLambda
+        );
+        // Query: Get a meditation session presigned URL
+        getMeditationSessionPresignedUrlDS.createResolver(
+            `${stage}-GetMeditationSessionPresignedUrlResolver`,
+            {
+                typeName: 'Query',
+                fieldName: 'getMeditationSessionPresignedUrl',
+            }
+        );
+
 
         // Output the GraphQL API URL
         new cdk.CfnOutput(this, 'GraphQLAPIURL', {

@@ -45,7 +45,10 @@ export const handler = async (event: any) => {
     } catch (error) {
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: "Failed to update status", error: error.message }),
+            body: JSON.stringify({
+                message: "Failed to update status",
+                error: (error instanceof Error) ? error.message : String(error)
+            }),
         };
     }
 };
