@@ -72,8 +72,8 @@ export class CognitoAuthConstruct extends Construct {
                     cognito.OAuthScope.OPENID,
                     cognito.OAuthScope.PROFILE,
                 ],
-                callbackUrls: ['http://localhost:3000/', 'http://localhost:5173/'],
-                logoutUrls: ['http://localhost:3000/', 'http://localhost:5173/'],
+                callbackUrls: ['http://localhost:3000/', 'http://localhost:5173/', 'https://meditation.scott12355.uk/', 'https://meditation.scott12355.uk/app'],
+                logoutUrls: ['http://localhost:3000/', 'http://localhost:5173/', 'https://meditation.scott12355.uk/'],
             },
         });
 

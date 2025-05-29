@@ -167,6 +167,48 @@ export class MeditationGraphqlApi extends Construct {
             }
         );
 
+        // Query: Get a meditation session status
+        const getMeditationSessionStatusLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-GetMeditationSessionStatusLambda`, {
+            runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+            functionName: `${stage}-GetMeditationSessionStatusLambda`,
+            entry: join(__dirname, '..', 'src', 'lambda', 'API', 'get-meditation-session-status', 'index.ts'),
+            description: 'Get meditation session status',
+            handler: 'handler',
+            timeout: cdk.Duration.seconds(10),
+            environment: {
+                MEDITATION_TABLE: meditationTable.tableName,
+            },
+            bundling: {
+                externalModules: ['aws-sdk'],
+            },
+        });
+
+        // Grant read data permissions to the Lambda function
+        meditationTable.grantReadData(getMeditationSessionStatusLambda);
+
+        getMeditationSessionStatusLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+            actions: ['dynamodb:GetItem'],
+            resources: [
+                meditationTable.tableArn
+            ],
+            effect: cdk.aws_iam.Effect.ALLOW,
+        }));
+
+        // Add Lambda data source to API for getting session status
+        const getMeditationSessionStatusDS = this.api.addLambdaDataSource(
+            `${stage}-GetMeditationSessionStatusLambdaDS`,
+            getMeditationSessionStatusLambda
+        );
+
+        // Query: Get a meditation session status
+        getMeditationSessionStatusDS.createResolver(
+            `${stage}-GetMeditationSessionStatusResolver`,
+            {
+                typeName: 'Query',
+                fieldName: 'getMeditationSessionStatus',
+            }
+        );
+
 
         // Output the GraphQL API URL
         new cdk.CfnOutput(this, 'GraphQLAPIURL', {

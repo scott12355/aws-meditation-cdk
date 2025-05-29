@@ -13,11 +13,10 @@ export const handler = async (event: any) => {
     try {
         // Get the user ID - either from Cognito claims or from arguments
         let userID;
-        
         // If using API Key auth or passing userID explicitly
         if (event.arguments && event.arguments.userID) {
             userID = event.arguments.userID;
-        } 
+        }
         // If using Cognito auth
         else if (event.identity && event.identity.claims && event.identity.claims.sub) {
             userID = event.identity.claims.sub;
@@ -27,6 +26,14 @@ export const handler = async (event: any) => {
 
         const sessionID = uuidv4();
         const timestamp = Date.now();
+
+        const sessionInsights = event?.arguments?.sessionInsights;
+        if (!sessionInsights) {
+            console.error('sessionInsights is required');
+            throw new Error('User is not authenticated or userID not provided');
+        }
+        console.log('Session insights:', sessionInsights);
+
 
 
         // Create new meditation session in DynamoDB
@@ -50,6 +57,7 @@ export const handler = async (event: any) => {
             input: JSON.stringify({
                 userID,
                 sessionID,
+                sessionInsights,
             }),
             name: `meditation-${sessionID.substring(0, 8)}`
         });

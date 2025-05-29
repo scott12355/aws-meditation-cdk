@@ -1,3 +1,5 @@
+scalar AWSJSON
+
 type MeditationSession {
   sessionID: ID!
   userID: ID!
@@ -10,6 +12,11 @@ type MeditationSessionAudioUrl {
   presignedUrl: String!
 }
 
+type MeditationSessionStatus {
+  status: MeditationStatus!
+  errorMessage: String
+}
+
 enum MeditationStatus {
   REQUESTED
   COMPLETED
@@ -19,11 +26,13 @@ enum MeditationStatus {
 type Query {
   listUserMeditationSessions(userID: ID!): [MeditationSession] @aws_api_key @aws_cognito_user_pools
   getMeditationSessionPresignedUrl(sessionID: ID!): MeditationSessionAudioUrl @aws_api_key @aws_cognito_user_pools
+  getMeditationSessionStatus(sessionID: ID!): MeditationSessionStatus @aws_api_key @aws_cognito_user_pools
 }
 
 type Mutation {
   createMeditationSession(
     userID: ID!
+    sessionInsights: AWSJSON
   ): MeditationSession @aws_api_key @aws_cognito_user_pools
 }
 

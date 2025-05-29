@@ -15,12 +15,7 @@ export const handler = async (event: any) => {
         console.log('Session ID:', sessionID);
 
         if (!sessionID) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({
-                    message: 'sessionID is required',
-                }),
-            };
+            throw new Error('sessionID is required');
         }
 
         // get session details from DynamoDB
@@ -43,24 +38,12 @@ export const handler = async (event: any) => {
 
             if (!sessionData.Item) {
                 console.log('No item found in response');
-                return {
-                    statusCode: 404,
-                    body: JSON.stringify({
-                        message: 'Meditation session not found',
-                    }),
-                };
             }
 
             console.log('Session item details:', JSON.stringify(sessionData.Item));
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching session from DynamoDB:', error);
-            return {
-                statusCode: 500,
-                body: JSON.stringify({
-                    message: 'Failed to retrieve meditation session',
-                    error: error.message
-                }),
-            };
+            throw new Error(`Failed to retrieve meditation session: ${error.message}`);
         }
 
         console.log('Fetching presigned URL for audio file...');
@@ -73,12 +56,7 @@ export const handler = async (event: any) => {
             console.log('Audio path:', objectKey);
 
             if (!objectKey) {
-                return {
-                    statusCode: 400,
-                    body: JSON.stringify({
-                        message: 'audioPath is required',
-                    }),
-                };
+                throw new Error('audioPath is required');
             }
 
             const getObjectParams = {
@@ -91,35 +69,18 @@ export const handler = async (event: any) => {
             const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // URL expires in 1 hour
             console.log('Presigned URL:', url);
 
-            // Return all the required fields for the MeditationSessionAudioUrl type
+            // Return only the presignedUrl as required by MeditationSessionAudioUrl type
             return {
-                presignedUrl: url,
-                userID: sessionData.Item.userID?.S || '',
-                timestamp: sessionData.Item.timestamp?.S || sessionData.Item.timestamp?.N || '',
-                status: sessionData.Item.status?.S || '',
-                sessionID: sessionID,
-                audioPath: objectKey
+                presignedUrl: url
             };
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error generating presigned URL:', error);
-            return {
-                statusCode: 500,
-                body: JSON.stringify({
-                    message: 'Failed to generate audio access URL',
-                    error: error.message
-                }),
-            };
+            throw new Error(`Failed to generate audio access URL: ${error.message}`);
         }
     }
-    catch (error) {
+    catch (error: any) {
         console.error('Error:', error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({
-                message: 'An error occurred',
-                error: error.message
-            }),
-        };
+        throw new Error(`An error occurred: ${error.message}`);
     }
 };

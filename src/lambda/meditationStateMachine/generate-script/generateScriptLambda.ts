@@ -12,7 +12,7 @@ export const handler = async (event: any) => {
     try {
         console.log('Starting meditation script generation...');
 
-        const { userID, sessionID } = event;
+        const { userID, sessionID, sessionInsights } = event;
         if (!userID || !sessionID) {
             return {
                 statusCode: 400,
@@ -32,13 +32,19 @@ Do not use unsupported tags like <p>, <s>, <audio>, <voice>, or any custom or no
 Structure the script with calm pacing, using <break> tags where natural pauses would occur.
 Wrap the entire script in a <speak> tag.
 Use <prosody> to gently slow down the rate. Do not use <prosody> to change the pitch or volume.
-Start with a 5 second pause.
-Output only the SSML code — no explanations or titles.`;
+Start with a 5 second pause. Feel free to use <break> tags for natural pauses, or longer breaks.
+Output only the SSML code — no explanations or titles.
+The script should be 4 minutes long, approximately 500 words. Try to make each session unique.
+Use the following session insights to personalize the script:
+${typeof sessionInsights === 'string' ? sessionInsights : JSON.stringify(sessionInsights, null, 2)}
+`;
         // Generate a unique ID for this meditation script
         const modelInput = {
             modelId: "amazon.nova-pro-v1:0",
             contentType: "application/json",
             accept: "application/json",
+            maxTokens: 3000,
+            temperature: 0.8,
             body: JSON.stringify({
                 messages: [
                     {
