@@ -1,11 +1,51 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { PutCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, QueryCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SFN } from '@aws-sdk/client-sfn';
 import { v4 as uuidv4 } from 'uuid';
 
 const dynamoDbClient = new DynamoDBClient({});
 const dynamoDb = DynamoDBDocumentClient.from(dynamoDbClient);
 const stepFunctions = new SFN({});
+
+// Helper function to get recent user insights
+const getRecentUserInsights = async (userID: string, days: number = 7) => {
+    try {
+        const userInsightsTable = process.env.USER_INSIGHTS_TABLE;
+        if (!userInsightsTable) {
+            console.log('USER_INSIGHTS_TABLE environment variable not set');
+            return null;
+        }
+
+        // Calculate date range (last N days)
+        const endDate = new Date().toISOString().split('T')[0]; // Today: YYYY-MM-DD
+        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        console.log(`Querying user insights from ${startDate} to ${endDate}`);
+
+        const queryParams = {
+            TableName: userInsightsTable,
+            KeyConditionExpression: 'userID = :userID AND #dateField BETWEEN :startDate AND :endDate',
+            ExpressionAttributeNames: {
+                '#dateField': 'date'
+            },
+            ExpressionAttributeValues: {
+                ':userID': userID,
+                ':startDate': startDate,
+                ':endDate': endDate
+            },
+            ScanIndexForward: false, // Sort by date descending (most recent first)
+            Limit: 10 // Limit to most recent 10 entries
+        };
+
+        const result = await dynamoDb.send(new QueryCommand(queryParams));
+        console.log(`Found ${result.Items?.length || 0} recent insights for user ${userID}`);
+
+        return result.Items || [];
+    } catch (error) {
+        console.error('Error fetching user insights:', error);
+        return null;
+    }
+};
 
 export const handler = async (event: any) => {
     console.log('Event received:', JSON.stringify(event, null, 2));
@@ -27,12 +67,24 @@ export const handler = async (event: any) => {
         const sessionID = uuidv4();
         const timestamp = Date.now();
 
+        // Get user's recent daily insights
+        const recentInsights = await getRecentUserInsights(userID);
+
+        // Combine provided session insights with recent user insights
         const sessionInsights = event?.arguments?.sessionInsights;
-        if (!sessionInsights) {
-            console.error('sessionInsights is required');
-            throw new Error('User is not authenticated or userID not provided');
-        }
-        console.log('Session insights:', sessionInsights);
+        console.log('Provided session insights:', sessionInsights);
+        console.log('Recent user insights:', recentInsights);
+
+        // Create enhanced insights object
+        const enhancedInsights = {
+            providedInsights: sessionInsights,
+            recentDailyInsights: recentInsights,
+            insightsContext: recentInsights ?
+                `User has ${recentInsights.length} recent daily insights entries. Recent mood trends and notes can inform personalization.` :
+                'No recent daily insights available for this user.'
+        };
+
+        console.log('Enhanced session insights:', enhancedInsights);
 
 
 
@@ -57,7 +109,7 @@ export const handler = async (event: any) => {
             input: JSON.stringify({
                 userID,
                 sessionID,
-                sessionInsights,
+                sessionInsights: enhancedInsights,
             }),
             name: `meditation-${sessionID.substring(0, 8)}`
         });

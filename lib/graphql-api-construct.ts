@@ -12,6 +12,7 @@ export interface GraphqlApiProps {
     stateMachine: sfn.StateMachine;
     userPool: cognito.UserPool;
     meditationBucket: cdk.aws_s3.Bucket;
+    userInsightsTable: cdk.aws_dynamodb.Table;
 }
 
 export class MeditationGraphqlApi extends Construct {
@@ -47,6 +48,7 @@ export class MeditationGraphqlApi extends Construct {
             environment: {
                 MEDITATION_TABLE: meditationTable.tableName,
                 STATE_MACHINE_ARN: stateMachine.stateMachineArn,
+                USER_INSIGHTS_TABLE: props.userInsightsTable.tableName,
             },
             bundling: {
                 externalModules: ['aws-sdk'],
@@ -55,7 +57,8 @@ export class MeditationGraphqlApi extends Construct {
 
         // Grant permissions to start execution of the state machine
         stateMachine.grantStartExecution(createMeditationLambda);
-        meditationTable.grantReadWriteData(createMeditationLambda);
+        meditationTable.grantWriteData(createMeditationLambda);
+        props.userInsightsTable.grantReadData(createMeditationLambda);
 
         // Add Lambda data source to API
         const createMeditationDS = this.api.addLambdaDataSource(
@@ -99,6 +102,114 @@ export class MeditationGraphqlApi extends Construct {
             ],
             effect: cdk.aws_iam.Effect.ALLOW, // Explicitly allow the action
         }));
+
+        // Mutation: Add user daily insights
+        const addUserDailyInsightsLambda = new lambda_nodejs.NodejsFunction(this, `${stage}-AddUserDailyInsightsLambda`, {
+            runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+            entry: join(__dirname, '..', 'src', 'lambda', 'API', 'add-user-daily-insights', 'index.ts'),
+            description: 'Add user daily insights',
+            handler: 'handler',
+            timeout: cdk.Duration.seconds(10),
+            environment: {
+                USER_INSIGHTS_TABLE: props.userInsightsTable.tableName,
+                USER_POOL_ID: props.userPool.userPoolId,
+            },
+            bundling: {
+                externalModules: ['aws-sdk'],
+            },
+        });
+
+        // Grant write permissions to the Lambda function
+        props.userInsightsTable.grantWriteData(addUserDailyInsightsLambda);
+
+        // Grant permission to read user data from Cognito User Pool
+        addUserDailyInsightsLambda.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+            actions: ['cognito-idp:AdminGetUser'],
+            resources: [props.userPool.userPoolArn],
+            effect: cdk.aws_iam.Effect.ALLOW,
+        }));
+        // Add Lambda data source to API for adding user daily insights
+        const addUserDailyInsightsDS = this.api.addLambdaDataSource(
+            `${stage}-AddUserDailyInsightsLambdaDS`,
+            addUserDailyInsightsLambda
+        );
+        // Mutation: Add user daily insights
+        addUserDailyInsightsDS.createResolver(
+            `${stage}-AddUserDailyInsightsResolver`,
+            {
+                typeName: 'Mutation',
+                fieldName: 'addUserDailyInsights',
+            }
+        );
+
+        // Create DynamoDB data source for user daily insights (VTL resolver)
+        const userInsightsDataSource = this.api.addDynamoDbDataSource(
+            `${stage}-UserInsightsDataSource`,
+            props.userInsightsTable
+        );
+
+        // Query: List user daily insights with optional date range filtering (VTL resolver)
+        userInsightsDataSource.createResolver(
+            `${stage}-ListUserDailyInsightsResolver`,
+            {
+                typeName: 'Query',
+                fieldName: 'listUserDailyInsights',
+                requestMappingTemplate: appsync.MappingTemplate.fromString(`
+                {
+                    "version": "2017-02-28",
+                    "operation": "Query",
+                    "query": {
+                        "expression": "userID = :userID",
+                        "expressionValues": {
+                            ":userID": $util.dynamodb.toDynamoDBJson($ctx.args.userID)
+                        }
+                    }
+                    #if($ctx.args.startDate && $ctx.args.endDate)
+                    ,
+                    "filter": {
+                        "expression": "#d BETWEEN :startDate AND :endDate",
+                        "expressionNames": {
+                            "#d": "date"
+                        },
+                        "expressionValues": {
+                            ":startDate": $util.dynamodb.toDynamoDBJson($ctx.args.startDate),
+                            ":endDate": $util.dynamodb.toDynamoDBJson($ctx.args.endDate)
+                        }
+                    }
+                    #elseif($ctx.args.startDate)
+                    ,
+                    "filter": {
+                        "expression": "#d >= :startDate",
+                        "expressionNames": {
+                            "#d": "date"
+                        },
+                        "expressionValues": {
+                            ":startDate": $util.dynamodb.toDynamoDBJson($ctx.args.startDate)
+                        }
+                    }
+                    #elseif($ctx.args.endDate)
+                    ,
+                    "filter": {
+                        "expression": "#d <= :endDate",
+                        "expressionNames": {
+                            "#d": "date"
+                        },
+                        "expressionValues": {
+                            ":endDate": $util.dynamodb.toDynamoDBJson($ctx.args.endDate)
+                        }
+                    }
+                    #end
+                }
+                `),
+                responseMappingTemplate: appsync.MappingTemplate.fromString(`
+                #if($ctx.result && $ctx.result.items)
+                    $util.toJson($ctx.result.items)
+                #else
+                    []
+                #end
+                `)
+            }
+        );
 
         // Add Lambda data source to API for listing a user's sessions
         const listUserMeditationSessionsDS = this.api.addLambdaDataSource(
@@ -208,6 +319,9 @@ export class MeditationGraphqlApi extends Construct {
                 fieldName: 'getMeditationSessionStatus',
             }
         );
+
+
+
 
 
         // Output the GraphQL API URL

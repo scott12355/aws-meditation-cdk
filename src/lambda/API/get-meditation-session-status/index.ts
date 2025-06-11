@@ -4,7 +4,7 @@ const client = new DynamoDBClient({});
 
 export const handler = async (event: any) => {
     console.log('Event received:', JSON.stringify(event));
-    
+
     try {
         // Get the sessionID from the event
         const { sessionID } = event.arguments;

@@ -26,24 +26,54 @@ export const handler = async (event: any) => {
         // date from unix timestamp
         const date = new Date();
         const currentDate = date.toISOString().split('T')[0];
-        const systemPrompt = `Generate a meditation script using valid SSML for AWS Polly.
-Use only tags that are supported by AWS Polly: <speak>, <prosody>, and <break>.
-Do not use unsupported tags like <p>, <s>, <audio>, <voice>, or any custom or non-standard tags.
+        const systemPrompt = `Generate a meditation script using valid SSML for AWS Polly's generative voices.
+
+Use only tags that are supported by AWS Polly's generative voices: <speak> and <break>.
+
+Do not use unsupported tags like <p>, <s>, <audio>, <voice>, <prosody>, or any custom or non-standard tags.
+
 Structure the script with calm pacing, using <break> tags where natural pauses would occur.
+
 Wrap the entire script in a <speak> tag.
-Use <prosody> to gently slow down the rate. Do not use <prosody> to change the pitch or volume.
-Start with a 5 second pause. Feel free to use <break> tags for natural pauses, or longer breaks.
+
+Start with a 5-second pause using a <break> tag.
+
 Output only the SSML code — no explanations or titles.
-The script should be 4 minutes long, approximately 500 words. Try to make each session unique.
+
+For example, the script should look like this:
+<speak>
+  <break time="5s"/>
+  Welcome to your meditation session.
+  <break time="1s"/>
+  Find a comfortable position and gently close your eyes.
+  <break time="1s"/>
+  Take a deep breath in...
+  <break time="2s"/>
+  ...and exhale slowly.
+  <break time="2s"/>
+  Let go of any tension in your body.
+  <break time="1s"/>
+  Allow your mind to settle and focus on the present moment.
+  <break time="2s"/>
+  Continue to breathe naturally and observe your thoughts without judgment.
+  <break time="2s"/>
+  When you're ready, gently bring your awareness back to your surroundings.
+  <break time="1s"/>
+  Open your eyes and carry this sense of calm with you.
+</speak>
+
+The script should be between 4 and 10 minutes long, approximately 600 - 1500 words. Try to make each session unique.
 Use the following session insights to personalize the script:
 ${typeof sessionInsights === 'string' ? sessionInsights : JSON.stringify(sessionInsights, null, 2)}
+
+Each script should be unique and not repeat previous scripts. Do not use the same script for different sessions.
 `;
         // Generate a unique ID for this meditation script
         const modelInput = {
             modelId: "amazon.nova-pro-v1:0",
             contentType: "application/json",
             accept: "application/json",
-            maxTokens: 3000,
+            maxTokens: 9000,
             temperature: 0.8,
             body: JSON.stringify({
                 messages: [

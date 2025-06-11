@@ -17,6 +17,22 @@ type MeditationSessionStatus {
   errorMessage: String
 }
 
+
+type UserDailyInsights {
+  userID: ID!
+  date: String!
+  notes: String
+  mood: Int
+  firstName: String
+}
+
+input UserDailyInsightsInput {
+  userID: ID!
+  date: String!
+  notes: String
+  mood: Int
+}
+
 enum MeditationStatus {
   REQUESTED
   COMPLETED
@@ -27,6 +43,7 @@ type Query {
   listUserMeditationSessions(userID: ID!): [MeditationSession] @aws_api_key @aws_cognito_user_pools
   getMeditationSessionPresignedUrl(sessionID: ID!): MeditationSessionAudioUrl @aws_api_key @aws_cognito_user_pools
   getMeditationSessionStatus(sessionID: ID!): MeditationSessionStatus @aws_api_key @aws_cognito_user_pools
+  listUserDailyInsights(userID: ID!, startDate: String, endDate: String): [UserDailyInsights] @aws_api_key @aws_cognito_user_pools
 }
 
 type Mutation {
@@ -34,6 +51,7 @@ type Mutation {
     userID: ID!
     sessionInsights: AWSJSON
   ): MeditationSession @aws_api_key @aws_cognito_user_pools
+  addUserDailyInsights(UserDailyInsightsInput: UserDailyInsightsInput!): UserDailyInsights @aws_api_key @aws_cognito_user_pools
 }
 
 schema @aws_api_key @aws_cognito_user_pools {

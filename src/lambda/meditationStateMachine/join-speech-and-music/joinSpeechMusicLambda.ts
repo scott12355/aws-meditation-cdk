@@ -46,8 +46,8 @@ export const handler = async (event: any) => {
 
 
         // Get the speech file from S3
-        const MediationBucket = process.env.USER_SESSION_BUCKET_NAME;
-        if (!MediationBucket) {
+        const meditationBucket = process.env.USER_SESSION_BUCKET_NAME;
+        if (!meditationBucket) {
             throw new Error('USER_SESSION_BUCKET_NAME environment variable is not set');
         }
         const musicBucket = process.env.BACKING_TRACK_BUCKET_NAME;
@@ -59,45 +59,14 @@ export const handler = async (event: any) => {
         let speechData;
         try {
             speechData = await s3Client.send(new GetObjectCommand({
-                Bucket: MediationBucket,
+                Bucket: meditationBucket,
                 Key: speechAudioPath
             }));
         }
         catch (error) {
             console.error('Error downloading speech audio:', error);
-            return {
-                statusCode: 500,
-                body: JSON.stringify({
-                    message: 'Error downloading music audio',
-                    error: error instanceof Error ? error.message : 'An unknown error occurred',
-                    userID: event.userID,
-                    sessionID: event.sessionID,
-                }),
-            };
+            return createErrorResponse(500, 'Error downloading speech audio', error, userID, sessionID);
         }
-
-        // Music file
-        let musicData;
-        try {
-            musicData = await s3Client.send(new GetObjectCommand({
-                Bucket: musicBucket,
-                Key: 'backing-track-1.mp3' // Default music track
-            }));
-        }
-        catch (error) {
-            console.error('Error downloading music audio:', error);
-            return {
-                statusCode: 500,
-                body: JSON.stringify({
-                    message: 'Error downloading music audio',
-                    error: error instanceof Error ? error.message : 'An unknown error occurred',
-                    userID: event.userID,
-                    sessionID: event.sessionID,
-                }),
-            };
-        }
-
-
 
         // Create temp file paths with proper directory creation
         const speechDir = path.join(os.tmpdir(), randomUUID());
@@ -112,23 +81,42 @@ export const handler = async (event: any) => {
         const speechFilePath = path.join(speechDir, 'speech.mp3');
         const musicFilePath = path.join(musicDir, 'background.mp3');
         const outputFilePath = path.join(outputDir, 'final-meditation.mp3');
-        // // Write files to temp directory
+
+        // Write speech file to temp directory
         fs.writeFileSync(speechFilePath, await streamToBuffer(speechData.Body));
+
+        // Get actual duration
+        const speechDuration = await getAudioDuration(speechFilePath);
+
+        // Select and download music track based on actual duration
+        const selectedMusicTrack = selectRandomMusicTrack(speechDuration);
+        if (!selectedMusicTrack) {
+            return createErrorResponse(400, 'No suitable music track found for speech duration', null, userID, sessionID);
+        }
+
+        let musicData;
+        try {
+            musicData = await s3Client.send(new GetObjectCommand({
+                Bucket: musicBucket,
+                Key: selectedMusicTrack
+            }));
+        }
+        catch (error) {
+            console.error('Error downloading music audio:', error);
+            return createErrorResponse(500, 'Error downloading music audio', error, userID, sessionID);
+        }
+
         fs.writeFileSync(musicFilePath, await streamToBuffer(musicData.Body));
 
-        // // Use ffmpeg to mix audio (this assumes ffmpeg is available in the Lambda environment)
-        // // NOTE: For actual deployment, you would need to include ffmpeg in your Lambda package
-        // // or use a Lambda layer with ffmpeg
+        // Use ffmpeg to mix audio
         await mixAudio(speechFilePath, musicFilePath, outputFilePath);
 
-        // // Upload final audio to meditation audio bucket
-
-        // current date from unix timestamp
+        // Upload final audio to meditation audio bucket
         const currentDate = new Date().toISOString().split('T')[0];
-
         const finalAudioKey = `${userID}/${currentDate}/${sessionID}.mp3`;
+
         await s3Client.send(new PutObjectCommand({
-            Bucket: MediationBucket,
+            Bucket: meditationBucket,
             Key: finalAudioKey,
             Body: fs.readFileSync(outputFilePath),
             ContentType: 'audio/mpeg',
@@ -157,15 +145,7 @@ export const handler = async (event: any) => {
         }
         catch (error) {
             console.error('Error updating DynamoDB:', error);
-            return {
-                statusCode: 500,
-                body: JSON.stringify({
-                    message: 'Error updating DynamoDB',
-                    error: error instanceof Error ? error.message : 'An unknown error occurred',
-                    userID: event.userID,
-                    sessionID: event.sessionID,
-                }),
-            };
+            return createErrorResponse(500, 'Error updating DynamoDB', error, userID, sessionID);
         }
 
         console.log(`Updated meditation session in DynamoDB: ${sessionID}`);
@@ -191,17 +171,22 @@ export const handler = async (event: any) => {
         };
     } catch (error) {
         console.error('Error:', error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({
-                message: 'Error joining speech and music',
-                error: error instanceof Error ? error.message : 'An unknown error occurred',
-                userID: event.userID,
-                sessionID: event.sessionID,
-            }),
-        };
+        return createErrorResponse(500, 'Error joining speech and music', error, event.userID, event.sessionID);
     }
 };
+
+// Helper function to create consistent error responses
+function createErrorResponse(statusCode: number, message: string, error: any, userID?: string, sessionID?: string) {
+    return {
+        statusCode,
+        body: JSON.stringify({
+            message,
+            error: error instanceof Error ? error.message : 'An unknown error occurred',
+            userID,
+            sessionID,
+        }),
+    };
+}
 
 // Helper function to convert stream to buffer
 async function streamToBuffer(stream: any): Promise<Buffer> {
@@ -223,7 +208,7 @@ async function mixAudio(speechPath: string, musicPath: string, outputPath: strin
         const ffmpeg = spawn('ffmpeg', [
             '-i', speechPath,
             '-i', musicPath,
-            '-filter_complex', '[1:a]volume=0.7[music];[0:a][music]amix=inputs=2:duration=longest',
+            '-filter_complex', '[1:a]volume=0.5[music];[0:a][music]amix=inputs=2:duration=longest',
             '-c:a', 'libmp3lame',
             '-q:a', '4',
             outputPath
@@ -239,6 +224,75 @@ async function mixAudio(speechPath: string, musicPath: string, outputPath: strin
 
         ffmpeg.stderr.on('data', (data) => {
             console.log(`ffmpeg: ${data}`);
+        });
+    });
+}
+
+// function to select a random music track based on the length of the speech
+function selectRandomMusicTrack(speechLength: number): string | null {
+    const musicTracks = [
+        { path: 'backing-track-1.mp3', duration: 300 },
+        { path: 'backing-track-2.mp3', duration: 300 },
+        { path: 'backing-track-3.mp3', duration: 480 },
+        { path: 'backing-track-4.mp3', duration: 540 },
+    ];
+
+    // Filter tracks that are longer than the speech
+    const suitableTracks = musicTracks.filter(track => track.duration > speechLength);
+
+    if (suitableTracks.length === 0) {
+        console.warn(`No suitable music tracks found for speech duration: ${speechLength}s`);
+        return null;
+    }
+
+    // Select a random track from the suitable ones
+    const randomIndex = Math.floor(Math.random() * suitableTracks.length);
+    return suitableTracks[randomIndex].path;
+}
+
+// Get audio duration using ffprobe
+async function getAudioDuration(filePath: string): Promise<number> {
+    // Set PATH to include the Lambda layer bin directory
+    process.env.PATH = `${process.env.PATH}:/opt/bin`;
+
+    return new Promise((resolve, reject) => {
+        const ffprobe = spawn('ffprobe', [
+            '-v', 'quiet',
+            '-show_entries', 'format=duration',
+            '-of', 'csv=p=0',
+            filePath
+        ]);
+
+        let duration = '';
+        let errorOutput = '';
+
+        ffprobe.stdout.on('data', (data) => {
+            duration += data.toString();
+        });
+
+        ffprobe.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+
+        ffprobe.on('error', (error) => {
+            if (error.code === 'ENOENT') {
+                reject(new Error('ffprobe not found. Ensure ffmpeg layer is properly configured.'));
+            } else {
+                reject(new Error(`ffprobe spawn error: ${error.message}`));
+            }
+        });
+
+        ffprobe.on('close', (code) => {
+            if (code === 0) {
+                const parsedDuration = parseFloat(duration.trim());
+                if (isNaN(parsedDuration)) {
+                    reject(new Error(`Invalid duration returned: ${duration.trim()}`));
+                } else {
+                    resolve(parsedDuration);
+                }
+            } else {
+                reject(new Error(`ffprobe failed with code ${code}. Error: ${errorOutput}`));
+            }
         });
     });
 }
