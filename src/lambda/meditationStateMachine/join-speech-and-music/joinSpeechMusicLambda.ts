@@ -80,10 +80,12 @@ export const handler = async (event: any) => {
 
         const speechFilePath = path.join(speechDir, 'speech.mp3');
         const musicFilePath = path.join(musicDir, 'background.mp3');
+        const albumArtPath = path.join(musicDir, 'album-art.jpg');
         const outputFilePath = path.join(outputDir, 'final-meditation.mp3');
 
         // Write speech file to temp directory
         fs.writeFileSync(speechFilePath, await streamToBuffer(speechData.Body));
+
 
         // Get actual duration
         const speechDuration = await getAudioDuration(speechFilePath);
@@ -108,8 +110,21 @@ export const handler = async (event: any) => {
 
         fs.writeFileSync(musicFilePath, await streamToBuffer(musicData.Body));
 
+        // Download album art (optional)
+        let albumArtFilePath: string | undefined;
+        try {
+            const albumArtData = await s3Client.send(new GetObjectCommand({
+                Bucket: musicBucket,
+                Key: 'cover_art.jpg' // Store your album art in the music bucket
+            }));
+            fs.writeFileSync(albumArtPath, await streamToBuffer(albumArtData.Body));
+            albumArtFilePath = albumArtPath;
+            console.log('Album art downloaded successfully:', albumArtFilePath);
+        } catch (error) {
+            console.warn('Album art not found, proceeding without it:', error);
+        }
         // Use ffmpeg to mix audio
-        await mixAudio(speechFilePath, musicFilePath, outputFilePath);
+        await mixAudio(speechFilePath, musicFilePath, outputFilePath, albumArtFilePath);
 
         // Upload final audio to meditation audio bucket
         const currentDate = new Date().toISOString().split('T')[0];
@@ -198,21 +213,47 @@ async function streamToBuffer(stream: any): Promise<Buffer> {
     });
 }
 
-// Mix speech and background music using ffmpeg
-async function mixAudio(speechPath: string, musicPath: string, outputPath: string): Promise<void> {
+// Mix speech and background music using ffmpeg with album art
+async function mixAudio(speechPath: string, musicPath: string, outputPath: string, albumArtPath?: string): Promise<void> {
     // Set PATH to include the Lambda layer bin directory
     process.env.PATH = `${process.env.PATH}:/opt/bin`;
 
     return new Promise((resolve, reject) => {
-        // This command overlays speech on music, reducing music volume to 20%
-        const ffmpeg = spawn('ffmpeg', [
+        const ffmpegArgs = [
             '-i', speechPath,
             '-i', musicPath,
-            '-filter_complex', '[1:a]volume=0.5[music];[0:a][music]amix=inputs=2:duration=longest',
+        ];
+
+        // Add album art if provided
+        if (albumArtPath) {
+            ffmpegArgs.push('-i', albumArtPath);
+        }
+
+        // Build filter complex
+        let filterComplex = '[1:a]volume=0.5[music];[0:a][music]amix=inputs=2:duration=longest[mixed]';
+
+        ffmpegArgs.push('-filter_complex', filterComplex);
+
+        // Add mapping for album art if provided
+        if (albumArtPath) {
+            ffmpegArgs.push(
+                '-map', '[mixed]',  // Map the mixed audio output
+                '-map', '2:v',      // Map video (image) from album art (third input)
+                '-c:v', 'mjpeg',    // Use mjpeg codec for cover art
+                '-disposition:v:0', 'attached_pic' // Mark as album art
+            );
+        } else {
+            ffmpegArgs.push('-map', '[mixed]'); // Just map the mixed audio
+        }
+
+        ffmpegArgs.push(
             '-c:a', 'libmp3lame',
             '-q:a', '4',
+            '-y', // Overwrite output file
             outputPath
-        ]);
+        );
+
+        const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 
         ffmpeg.on('close', (code) => {
             if (code === 0) {
@@ -225,6 +266,10 @@ async function mixAudio(speechPath: string, musicPath: string, outputPath: strin
         ffmpeg.stderr.on('data', (data) => {
             console.log(`ffmpeg: ${data}`);
         });
+
+        ffmpeg.on('error', (error) => {
+            reject(new Error(`ffmpeg spawn error: ${error.message}`));
+        });
     });
 }
 
@@ -234,7 +279,7 @@ function selectRandomMusicTrack(speechLength: number): string | null {
         { path: 'backing-track-1.mp3', duration: 300 },
         { path: 'backing-track-2.mp3', duration: 300 },
         { path: 'backing-track-3.mp3', duration: 480 },
-        { path: 'backing-track-4.mp3', duration: 540 },
+        { path: 'backing-track-3.mp3', duration: 600 },
     ];
 
     // Filter tracks that are longer than the speech

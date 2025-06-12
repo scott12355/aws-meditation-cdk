@@ -132,7 +132,8 @@ export class AwsMeditationCdkStack extends cdk.Stack {
       runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
       entry: join(__dirname, '..', 'src', 'lambda', 'meditationStateMachine', 'join-speech-and-music', 'index.ts'),
       handler: 'handler',
-      timeout: cdk.Duration.minutes(2),
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 2048, // or higher, depending on your needs
       layers: [ffmpegLayer],
       bundling: {
         externalModules: ['aws-sdk'],
